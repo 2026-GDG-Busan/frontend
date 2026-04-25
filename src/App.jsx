@@ -54,7 +54,8 @@ export default function App() {
     isCameraCovered: false,
     shoulderShakeScore: 0,
     isShoulderShaking: false,
-    isHit: false
+    isHit: false,
+    apologized: false
   });
 
   const [state, setState] = useState(initialStatus);
@@ -181,6 +182,7 @@ export default function App() {
   const closePopup = useCallback(() => {
     popupVisibleRef.current = false;
     appStateRef.current.isPopupOpen = false;
+    appStateRef.current.apologized = false;
     updateState({
       popupVisible: false,
       containerFilter: 'none',
@@ -199,6 +201,7 @@ export default function App() {
     const accepted = normalized.includes('죄송') || normalized.includes('미안') || normalized.includes('잘못');
 
     if (accepted) {
+      appStateRef.current.apologized = true;
       updateState({
         sttStatus: `들린 말: "${transcript}"\n✅ 사과를 받아들입니다.`,
         sttStatusColor: '#0f0'
@@ -220,10 +223,59 @@ export default function App() {
     }
   }, []);
 
+  // 프론트에서 gauge 계산하는 함수
+  const calculateGauge = useCallback(() => {
+    const volume = appStateRef.current.currentVolume;
+    const isPraying = appStateRef.current.isPraying;
+    const isHit = appStateRef.current.isHit;
+    const cameraCoverScore = appStateRef.current.cameraCoverScore;
+    const shoulderShakeScore = appStateRef.current.shoulderShakeScore;
+    const isCameraCovered = appStateRef.current.isCameraCovered;
+    const isShoulderShaking = appStateRef.current.isShoulderShaking;
+
+    // 게이지 계산 로직
+    let gauge = 0;
+
+    // 1. 마이크 볼륨: 0-40 포인트
+    gauge += (volume / 100) * 40;
+
+    // 2. 기도 감지: +25 포인트
+    if (isPraying) {
+      gauge += 25;
+    }
+
+    // 3. 타격 감지: +15 포인트
+    if (isHit) {
+      gauge += 15;
+    }
+
+    // 4. 카메라 가림: 0-20 포인트
+    if (isCameraCovered) {
+      gauge += cameraCoverScore * 20;
+    }
+
+    // 5. 어깨 흔들기: 0-15 포인트 (isShoulderShaking 일 때만)
+    if (isShoulderShaking) {
+      gauge += shoulderShakeScore * 15;
+    }
+
+    // 6. 팝업 상태에서 사과할 때: +10 포인트 (사과 완료 시)
+    if (appStateRef.current.isPopupOpen && appStateRef.current.apologized) {
+      gauge += 10;
+      appStateRef.current.apologized = false;
+    }
+
+    return Math.min(100, Math.round(gauge));
+  }, []);
+
   const sendStatus = useCallback(async () => {
     try {
+      // 프론트에서 게이지 계산
+      const frontCalculatedGauge = calculateGauge();
+
       const payload = {
         user_id: 'test_user_1',
+        gauge: frontCalculatedGauge,
         volume: appStateRef.current.currentVolume,
         is_praying: appStateRef.current.isPraying,
         is_popup_active: appStateRef.current.isPopupOpen,
@@ -253,8 +305,8 @@ export default function App() {
         return;
       }
 
-      const localBoost = Math.round(appStateRef.current.cameraCoverScore * 6 + appStateRef.current.shoulderShakeScore * 6);
-      const gaugeValue = Math.min(100, data.gauge + localBoost);
+      // 프론트에서 계산한 gauge 값 사용 (백엔드 gauge는 무시)
+      const gaugeValue = frontCalculatedGauge;
 
       let message = `> ${data.message}`;
       let messageColor = data.voice_trigger === 'angry' ? 'red' : '#0f0';
@@ -272,7 +324,8 @@ export default function App() {
         }
       }
 
-      if (data.status === 'awoken') {
+      // 프론트에서 계산한 게이지로 성공 판단
+      if (gaugeValue >= 100) {
         updateState({
           isAwoken: true,
           successLayerVisible: true,
@@ -311,7 +364,7 @@ export default function App() {
     } catch (err) {
       console.error('서버 통신 에러:', err);
     }
-  }, [updateState]);
+  }, [updateState, calculateGauge]);
 
   useEffect(() => {
     recognitionRef.current = initSpeech({ onResult: handleSpeechResult, onRecognitionEnd: handleRecognitionEnd });
