@@ -1,0 +1,17 @@
+export const APP_CONFIG = {
+  BACKEND_URL: import.meta.env.VITE_BACKEND_URL || '/api',
+
+  POPUP: {
+    VOL_THRESHOLD: 70,
+    TRIGGER_FRAMES: 60,
+    CLOSE_DELAY_MS: 1500
+  },
+
+  PRAY: {
+    DISTANCE_THRESHOLD: 0.3,
+    GRACE_PERIOD_MS: 500,
+    FLICKER_PERIOD_MS: 500
+  },
+
+  SYNC_INTERVAL_MS: 1000
+};
