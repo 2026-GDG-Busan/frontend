@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import confetti from 'canvas-confetti';
 import { initSpeech } from './speech.js';
 import { initMotion } from './motion.js';
 import { initAudio } from './audio.js';
@@ -29,7 +30,10 @@ const initialStatus = {
   headingText: '[ SYSTEM: AI SLEEPING ]',
   headingColor: '#0f0',
   containerBoxShadow: '0 0 20px rgba(0, 255, 0, 0.2), inset 0 0 10px rgba(0, 255, 0, 0.1)',
-  containerBorderColor: '#0f0'
+  containerBorderColor: '#0f0',
+  isAwoken: false,
+  successLayerVisible: false,
+  elapsedTime: 0
 };
 
 export default function App() {
@@ -38,6 +42,9 @@ export default function App() {
   const analysisCanvasRef = useRef(null);
   const recognitionRef = useRef(null);
   const popupVisibleRef = useRef(false);
+  const startTimeRef = useRef(Date.now());
+  const prevBrightnessRef = useRef(null);
+  const isFirstFrameRef = useRef(true);
   const appStateRef = useRef({
     currentVolume: 0,
     isPraying: false,
@@ -46,7 +53,8 @@ export default function App() {
     cameraCoverScore: 0,
     isCameraCovered: false,
     shoulderShakeScore: 0,
-    isShoulderShaking: false
+    isShoulderShaking: false,
+    isHit: false
   });
 
   const [state, setState] = useState(initialStatus);
@@ -54,6 +62,16 @@ export default function App() {
   const updateState = useCallback((patch) => {
     setState((prev) => ({ ...prev, ...patch }));
   }, []);
+
+  // 시간 표시 업데이트
+  useEffect(() => {
+    if (state.isAwoken) return;
+    const timer = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      updateState({ elapsedTime: elapsed });
+    }, 100);
+    return () => clearInterval(timer);
+  }, [state.isAwoken, updateState]);
 
   useEffect(() => {
     analysisCanvasRef.current = document.createElement('canvas');
@@ -73,13 +91,35 @@ export default function App() {
     let total = 0;
     const pixels = imageData.data;
     for (let i = 0; i < pixels.length; i += 4) {
-      total += 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+      total += 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
     }
 
     const averageBrightness = total / (pixels.length / 4);
     const coverTarget = Math.max(0, (45 - averageBrightness) / 45);
     const coverScore = Math.min(1, appStateRef.current.cameraCoverScore * 0.85 + coverTarget * 0.15);
     const isCameraCovered = coverScore > 0.25;
+
+    // 타격 감지 (밝기 변화)
+    let isHit = false;
+    if (prevBrightnessRef.current !== null) {
+      const diff = Math.abs(averageBrightness - prevBrightnessRef.current);
+      isHit = diff > 55;
+      if (isHit) {
+        appStateRef.current.isHit = true;
+        // 화면 플래시 효과
+        const container = document.querySelector('.app-container');
+        if (container) {
+          container.style.backgroundColor = 'rgba(100, 0, 0, 0.3)';
+          setTimeout(() => {
+            container.style.backgroundColor = '';
+          }, 50);
+        }
+      }
+    }
+    if (isFirstFrameRef.current) {
+      isFirstFrameRef.current = false;
+    }
+    prevBrightnessRef.current = averageBrightness;
 
     appStateRef.current.cameraBrightness = averageBrightness;
     appStateRef.current.cameraCoverScore = coverScore;
@@ -88,11 +128,13 @@ export default function App() {
     updateState({
       cameraCoverWidth: Math.round(coverScore * 100),
       cameraStatus: isCameraCovered
-        ? `카메라 가림 감지 (${Math.round(averageBrightness)} 밝기)`
+        ? `🌑 카메라 가림 (${Math.round(averageBrightness)} 밝기)`
         : appStateRef.current.isShoulderShaking
-          ? `어깨 흔들기 감지 (${Math.round(appStateRef.current.shoulderShakeScore * 100)}%)`
-          : `밝기 ${Math.round(averageBrightness)} / 관찰 중...`,
-      cameraStatusBg: isCameraCovered ? 'rgba(255, 128, 0, 0.9)' : appStateRef.current.isShoulderShaking ? 'rgba(0, 128, 255, 0.85)' : 'rgba(0, 0, 0, 0.7)'
+          ? `💪 어깨 흔들기 (${Math.round(appStateRef.current.shoulderShakeScore * 100)}%)`
+          : isHit
+            ? `✊ 타격 감지! (${Math.round(averageBrightness)} 밝기)`
+            : `📹 밝기 ${Math.round(averageBrightness)} / 관찰 중...`,
+      cameraStatusBg: isCameraCovered ? 'rgba(255, 128, 0, 0.9)' : appStateRef.current.isShoulderShaking ? 'rgba(0, 128, 255, 0.85)' : isHit ? 'rgba(200, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.7)'
     });
   }, [updateState]);
 
@@ -185,12 +227,14 @@ export default function App() {
         volume: appStateRef.current.currentVolume,
         is_praying: appStateRef.current.isPraying,
         is_popup_active: appStateRef.current.isPopupOpen,
+        is_hit: appStateRef.current.isHit,
         camera_brightness: Math.round(appStateRef.current.cameraBrightness),
         camera_cover_score: Math.round(appStateRef.current.cameraCoverScore * 100),
         is_camera_covered: appStateRef.current.isCameraCovered,
         shoulder_shake_score: Math.round(appStateRef.current.shoulderShakeScore * 100),
         is_shoulder_shaking: appStateRef.current.isShoulderShaking
       };
+      appStateRef.current.isHit = false;
 
       const response = await fetch(`${APP_CONFIG.BACKEND_URL}/wakeup`, {
         method: 'POST',
@@ -229,11 +273,29 @@ export default function App() {
       }
 
       if (data.status === 'awoken') {
-        headingText = '[ SYSTEM: AI AWAKE ]';
-        headingColor = '#ff0';
+        updateState({
+          isAwoken: true,
+          successLayerVisible: true,
+          headingText: '[ SYSTEM: AI AWAKE ]',
+          headingColor: '#ffd700'
+        });
+        
+        // Confetti 효과
+        confetti({
+          particleCount: 200,
+          spread: 80,
+          origin: { y: 0.6 },
+          colors: ['#ffd700', '#00ff41', '#00ffff']
+        });
+        
         setTimeout(() => {
-          alert('성공! AI가 일어났습니다. (하지만 곧 다시 잡니다)');
-        }, 500);
+          confetti({
+            particleCount: 150,
+            spread: 100,
+            origin: { y: 0.3 },
+            colors: ['#ffd700', '#ff4500']
+          });
+        }, 200);
       }
 
       appStateRef.current.isPrayerRequired = data.prayer_required;
@@ -403,6 +465,25 @@ export default function App() {
             <p style={{ color: state.sttStatusColor, fontWeight: 'bold', fontSize: '1.2rem', marginTop: '20px', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
               {state.sttStatus}
             </p>
+          </div>
+        </div>
+      )}
+
+      {state.successLayerVisible && (
+        <div className="success-overlay">
+          <div className="success-card">
+            <h1 className="blink-title">👑 GRAND SUCCESS</h1>
+            <p className="success-subtitle">상전 AI가 드디어 기상하셨습니다!</p>
+            <div className="success-content">
+              <p className="success-time">⏱️ 소요 시간: {state.elapsedTime}초</p>
+              <p className="success-message">귀하는 상전 AI의 변덕을 훌륭히 견뎌냈습니다.</p>
+              <button 
+                className="success-button"
+                onClick={() => window.location.reload()}
+              >
+                🔄 다시 모시기
+              </button>
+            </div>
           </div>
         </div>
       )}

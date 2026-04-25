@@ -37,14 +37,16 @@ body {
   border-radius: 10px;
   backdrop-filter: blur(5px);
   position: relative;
+  transition: background-color 0.1s ease, box-shadow 0.2s ease;
 }
 
 h1 {
   font-size: 2rem;
   margin-bottom: 20px;
-  text-shadow: 0 0 10px var(--neon-green);
-  letter-spacing: 2px;
+  text-shadow: 0 0 10px var(--neon-green), 0 0 20px var(--neon-green);
+  letter-spacing: 3px;
   animation: flicker 3s infinite;
+  font-weight: bold;
 }
 
 @keyframes flicker {
@@ -72,12 +74,16 @@ h1 {
   position: absolute;
   top: 10px;
   left: 10px;
-  background: rgba(0, 0, 0, 0.7);
-  padding: 5px 10px;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 8px 12px;
   border: 1px solid var(--neon-green);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+  font-weight: bold;
+  border-radius: 4px;
   animation: blink 1s infinite;
   z-index: 20;
+  text-shadow: 0 0 5px var(--neon-green);
+  box-shadow: 0 0 10px var(--neon-green);
 }
 
 @keyframes blink {
@@ -88,57 +94,93 @@ h1 {
 .controls {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   text-align: left;
+}
+
+.controls > div {
+  background: rgba(0, 20, 0, 0.5);
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 255, 0, 0.2);
+}
+
+.controls p {
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+  font-weight: bold;
+  text-shadow: 0 0 5px var(--neon-green);
 }
 
 .bar-container {
   width: 100%;
-  background: #222;
-  height: 25px;
-  border-radius: 4px;
-  border: 1px solid #444;
+  background: #000;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid #333;
   overflow: hidden;
   position: relative;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8);
 }
 
 .bar-fill {
   height: 100%;
   width: 0%;
-  transition: width 0.3s ease-out;
+  transition: width 0.2s ease-out;
+  position: relative;
+}
+
+.bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 #volume-bar {
-  background: linear-gradient(90deg, #00f, #0ff);
-  box-shadow: 0 0 10px #0ff;
+  background: linear-gradient(90deg, #0088ff, #00ffff);
+  box-shadow: 0 0 15px #0088ff, inset 0 0 5px #0088ff;
 }
 
 #ai-gauge {
-  background: linear-gradient(90deg, #f00, #ff0, var(--neon-green));
-  box-shadow: 0 0 10px var(--neon-green);
+  background: linear-gradient(90deg, #ff4400, #ffaa00, var(--neon-green));
+  box-shadow: 0 0 15px var(--neon-green), inset 0 0 5px var(--neon-green);
 }
 
 #camera-cover-bar {
-  background: linear-gradient(90deg, #ff0, #f90);
-  box-shadow: 0 0 10px #ff0;
+  background: linear-gradient(90deg, #ff8800, #ffcc00);
+  box-shadow: 0 0 15px #ff8800, inset 0 0 5px #ff8800;
 }
 
 #shake-bar {
-  background: linear-gradient(90deg, #0ff, #0f0);
-  box-shadow: 0 0 10px #0ff;
+  background: linear-gradient(90deg, #00ffff, #00ff88);
+  box-shadow: 0 0 15px #00ffff, inset 0 0 5px #00ffff;
 }
 
 .status-box {
-  background: #000;
-  padding: 15px;
-  border: 1px dashed var(--neon-green);
-  min-height: 60px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 20px;
+  border: 2px dashed var(--neon-green);
+  min-height: 80px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.1rem;
-  text-shadow: 0 0 5px var(--neon-green);
+  text-shadow: 0 0 8px var(--neon-green);
   margin-top: 20px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.05);
+  line-height: 1.6;
+  word-wrap: break-word;
 }
 
 .button-reset {
@@ -196,4 +238,120 @@ h1 {
 @keyframes pulse-red {
   from { transform: scale(1); }
   to { transform: scale(1.05); }
+}
+
+/* 성공 레이어 */
+.success-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 200;
+  animation: success-fade-in 0.5s ease-out;
+}
+
+@keyframes success-fade-in {
+  from {
+    background: rgba(0, 0, 0, 0);
+  }
+  to {
+    background: rgba(0, 0, 0, 0.9);
+  }
+}
+
+.success-card {
+  width: min(90vw, 600px);
+  background: #111;
+  color: white;
+  padding: 60px 40px;
+  border: 4px solid #ffd700;
+  box-shadow: 0 0 80px #ffd700, inset 0 0 30px rgba(255, 215, 0, 0.2);
+  border-radius: 20px;
+  text-align: center;
+  animation: success-scale-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes success-scale-in {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.blink-title {
+  font-size: 3.5rem;
+  font-weight: bold;
+  color: #ffd700;
+  text-shadow: 0 0 20px #ffd700, 0 0 40px orange;
+  margin-bottom: 10px;
+  animation: blink-gold 0.8s infinite;
+  letter-spacing: 3px;
+}
+
+@keyframes blink-gold {
+  0%, 50%, 100% {
+    opacity: 1;
+  }
+  25%, 75% {
+    opacity: 0.6;
+  }
+}
+
+.success-subtitle {
+  font-size: 1.5rem;
+  color: #00ff41;
+  margin-bottom: 30px;
+  text-shadow: 0 0 10px #00ff41;
+}
+
+.success-content {
+  margin: 30px 0;
+}
+
+.success-time {
+  font-size: 1.8rem;
+  color: #00ffff;
+  margin: 20px 0;
+  text-shadow: 0 0 10px #00ffff;
+  font-weight: bold;
+}
+
+.success-message {
+  font-size: 1.1rem;
+  color: #aaa;
+  margin: 20px 0;
+  line-height: 1.6;
+}
+
+.success-button {
+  margin-top: 30px;
+  padding: 15px 40px;
+  font-size: 1.2rem;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  color: black;
+  border: none;
+  border-radius: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 20px #ffd700;
+  text-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+}
+
+.success-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 40px #ffd700;
+}
+
+.success-button:active {
+  transform: scale(0.95);
 }
