@@ -22,7 +22,7 @@ const initialStatus = {
   shakeWidth: 0,
   cameraStatus: '카메라 밝기 분석 중...',
   cameraStatusBg: 'rgba(0,0,0,0.7)',
-  sttStatus: '🎤 "죄송합니다"라고 사과하세요...',
+  sttStatus: '🎤 "사과하세요...',
   sttStatusColor: 'yellow',
   popupVisible: false,
   containerFilter: 'none',
