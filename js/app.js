@@ -11,10 +11,50 @@ const elements = {
     prayerStatus: document.getElementById('prayer-status'),
     aiGauge: document.getElementById('ai-gauge'),
     volBar: document.getElementById('volume-bar'),
+    cameraCoverBar: document.getElementById('camera-cover-bar'),
+    shakeBar: document.getElementById('shake-bar'),
+    cameraStatus: document.getElementById('camera-status'),
     aiMessage: document.getElementById('ai-message'),
     popup: document.getElementById('popup'),
     sttStatus: document.getElementById('stt-status')
 };
+
+const analysisCanvas = document.createElement('canvas');
+analysisCanvas.width = 160;
+analysisCanvas.height = 120;
+const analysisCtx = analysisCanvas.getContext('2d');
+
+function updateCameraAnalysis() {
+    if (!elements.video.videoWidth || !elements.video.videoHeight) return;
+    analysisCtx.drawImage(elements.video, 0, 0, analysisCanvas.width, analysisCanvas.height);
+    const imageData = analysisCtx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
+    let total = 0;
+    const pixels = imageData.data;
+    for (let i = 0; i < pixels.length; i += 4) {
+        total += 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+    }
+    const averageBrightness = total / (pixels.length / 4);
+    state.cameraBrightness = averageBrightness;
+    const coverTarget = Math.max(0, (45 - averageBrightness) / 45);
+    state.cameraCoverScore = Math.min(1, state.cameraCoverScore * 0.85 + coverTarget * 0.15);
+    state.isCameraCovered = state.cameraCoverScore > 0.25;
+}
+
+function refreshCameraUI() {
+    if (!elements.cameraCoverBar || !elements.shakeBar || !elements.cameraStatus) return;
+    elements.cameraCoverBar.style.width = `${Math.round(state.cameraCoverScore * 100)}%`;
+    elements.shakeBar.style.width = `${Math.round(state.shoulderShakeScore * 100)}%`;
+    if (state.isCameraCovered) {
+        elements.cameraStatus.innerText = `카메라 가림 감지 (${Math.round(state.cameraBrightness)} 밝기)`;
+        elements.cameraStatus.style.background = 'rgba(255, 128, 0, 0.9)';
+    } else if (state.isShoulderShaking) {
+        elements.cameraStatus.innerText = `어깨 흔들기 감지 (${Math.round(state.shoulderShakeScore * 100)}%)`;
+        elements.cameraStatus.style.background = 'rgba(0, 128, 255, 0.85)';
+    } else {
+        elements.cameraStatus.innerText = `밝기 ${Math.round(state.cameraBrightness)} / 관찰 중...`;
+        elements.cameraStatus.style.background = 'rgba(0, 0, 0, 0.7)';
+    }
+}
 
 // 1. 음성 인식(STT) 초기화
 initSpeech(elements);
@@ -31,12 +71,14 @@ async function setupMedia() {
         // 카메라 프레임을 MediaPipe로 전송
         const camera = new Camera(elements.video, {
             onFrame: async () => {
+                updateCameraAnalysis();
                 await hands.send({ image: elements.video });
             },
             width: 640,
             height: 480
         });
         camera.start();
+        setInterval(refreshCameraUI, 100);
 
         // 오디오 분석기 초기화
         initAudio(stream, elements);
@@ -57,7 +99,12 @@ async function sendStatus() {
                 user_id: "test_user_1",
                 volume: state.currentVolume,
                 is_praying: state.isPraying,
-                is_popup_active: elements.popup.style.display === 'block'
+                is_popup_active: elements.popup.style.display === 'block',
+                camera_brightness: Math.round(state.cameraBrightness),
+                camera_cover_score: Math.round(state.cameraCoverScore * 100),
+                is_camera_covered: state.isCameraCovered,
+                shoulder_shake_score: Math.round(state.shoulderShakeScore * 100),
+                is_shoulder_shaking: state.isShoulderShaking
             })
         });
 
@@ -72,7 +119,8 @@ async function sendStatus() {
         }
 
         // 상태 업데이트 반영
-        elements.aiGauge.style.width = data.gauge + "%";
+        const localBoost = Math.round(state.cameraCoverScore * 6 + state.shoulderShakeScore * 6);
+        elements.aiGauge.style.width = `${Math.min(100, data.gauge + localBoost)}%`;
         elements.aiMessage.innerText = `> ${data.message}`;
         elements.aiMessage.style.color = (data.voice_trigger === 'angry') ? "red" : "#0f0";
 

@@ -2,7 +2,7 @@
 
 export const APP_CONFIG = {
     // 서버 주소
-    BACKEND_URL: import.meta.env.BACKEND_URL,
+    BACKEND_URL: import.meta.env.VITE_BACKEND_URL,
 
     // 소음 민원 팝업 설정
     POPUP: {

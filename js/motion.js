@@ -2,6 +2,9 @@ import { state } from './state.js';
 import { APP_CONFIG } from './config.js';
 
 let lastPrayTime = 0;
+let lastHandCenterX = null;
+let lastHandTime = Date.now();
+let shakeAccumulator = 0;
 
 export function initMotion(elements) {
     const hands = new Hands({locateFile: (file) => {
@@ -58,12 +61,38 @@ export function initMotion(elements) {
                     }
                 }
             }
+
+            // 어깨 흔들기 / 카메라 앞 손 움직임 감지용
+            const handCenter = results.multiHandLandmarks.reduce((acc, landmarks) => {
+                acc.x += landmarks[0].x;
+                acc.y += landmarks[0].y;
+                return acc;
+            }, {x: 0, y: 0});
+            handCenter.x /= results.multiHandLandmarks.length;
+            handCenter.y /= results.multiHandLandmarks.length;
+
+            const now = Date.now();
+            const dt = Math.max(1, now - lastHandTime) / 1000;
+            const dx = lastHandCenterX === null ? 0 : Math.abs(handCenter.x - lastHandCenterX);
+            lastHandCenterX = handCenter.x;
+            lastHandTime = now;
+
+            if (handCenter.y > 0.2 && handCenter.y < 0.65 && dx > 0.05) {
+                shakeAccumulator = Math.min(1, shakeAccumulator + Math.min(0.25, dx * 4));
+            } else {
+                shakeAccumulator *= 0.92;
+            }
         } else {
+            shakeAccumulator *= 0.85;
             // 아예 손이 안 보일 때만 잠깐의 유예 시간 적용
             if (Date.now() - lastPrayTime < APP_CONFIG.PRAY.FLICKER_PERIOD_MS) {
                 currentIsPraying = true;
             }
         }
+
+        shakeAccumulator = Math.max(0, Math.min(shakeAccumulator, 1));
+        state.shoulderShakeScore = shakeAccumulator;
+        state.isShoulderShaking = shakeAccumulator > 0.3;
 
         if (currentIsPraying !== state.isPraying) {
             state.isPraying = currentIsPraying;
