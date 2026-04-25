@@ -6,7 +6,7 @@ export const APP_CONFIG = {
 
     // 소음 민원 팝업 설정
     POPUP: {
-        VOL_THRESHOLD: 50,      // 이 볼륨보다 크면 타이머 상승
+        VOL_THRESHOLD: 70,      // 이 볼륨보다 크면 타이머 상승
         TRIGGER_FRAMES: 60,     // 약 0.5초(60fps 기준) 지속 시 팝업 발생
         CLOSE_DELAY_MS: 1500    // 사과 성공 후 팝업이 닫히기까지 대기 시간
     },
