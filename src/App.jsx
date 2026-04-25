@@ -1,9 +1,34 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { initSpeech } from './speech.js';
 import { initMotion } from './motion.js';
 import { initAudio } from './audio.js';
 import { APP_CONFIG } from './config.js';
+
+const NICKNAME_STORAGE_KEY = 'noble-ai-nickname';
+
+const extractRankings = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.rankings)) return payload.rankings;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
+
+const normalizeRanking = (entry, index) => {
+  const rawTime = entry?.time ?? entry?.elapsedTime ?? entry?.elapsed_time ?? 0;
+  const time = Number(rawTime);
+  return {
+    id: String(entry?.id ?? entry?.createdAt ?? entry?.created_at ?? `${entry?.name ?? 'rank'}-${index}`),
+    name: String(entry?.name ?? entry?.nickname ?? '익명'),
+    time: Number.isFinite(time) ? time : 0
+  };
+};
+
+const formatRecordTime = (time) => {
+  const numericTime = Number(time);
+  return Number.isFinite(numericTime) ? numericTime.toFixed(2) : '0.00';
+};
 
 const initialPrayerStyles = {
   text: '⏳ 모델 로딩중...',
@@ -19,10 +44,9 @@ const initialStatus = {
   aiGauge: 0,
   prayerStatus: initialPrayerStyles,
   volumeWidth: 0,
-  cameraCoverWidth: 0,
   shakeWidth: 0,
-  cameraStatus: '카메라 밝기 분석 중...',
-  cameraStatusBg: 'rgba(0,0,0,0.7)',
+  motionStatus: '모션 인식 대기 중...',
+  motionStatusBg: 'rgba(0,0,0,0.7)',
   sttStatus: '🎤 "사과하세요...',
   sttStatusColor: 'yellow',
   popupVisible: false,
@@ -33,29 +57,30 @@ const initialStatus = {
   containerBorderColor: '#0f0',
   isAwoken: false,
   successLayerVisible: false,
-  elapsedTime: 0
+  elapsedTime: 0,
+  nickname: '',
+  rankings: [],
+  rankingLoading: false,
+  rankingError: '',
+  rankingSubmitting: false,
+  rankingSubmitted: false,
+  rankingSubmitMessage: ''
 };
 
 export default function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const analysisCanvasRef = useRef(null);
   const recognitionRef = useRef(null);
   const popupVisibleRef = useRef(false);
   const startTimeRef = useRef(Date.now());
-  const prevBrightnessRef = useRef(null);
-  const isFirstFrameRef = useRef(true);
   const appStateRef = useRef({
     currentVolume: 0,
     isPraying: false,
     isPopupOpen: false,
-    cameraBrightness: 100,
-    cameraCoverScore: 0,
-    isCameraCovered: false,
     shoulderShakeScore: 0,
     isShoulderShaking: false,
-    isHit: false,
-    apologized: false
+    apologized: false,
+    hasAwoken: false
   });
 
   const [state, setState] = useState(initialStatus);
@@ -68,6 +93,7 @@ export default function App() {
   useEffect(() => {
     if (state.isAwoken) return;
     const timer = setInterval(() => {
+      if (appStateRef.current.hasAwoken) return;
       const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
       updateState({ elapsedTime: elapsed });
     }, 100);
@@ -75,68 +101,14 @@ export default function App() {
   }, [state.isAwoken, updateState]);
 
   useEffect(() => {
-    analysisCanvasRef.current = document.createElement('canvas');
-    analysisCanvasRef.current.width = 160;
-    analysisCanvasRef.current.height = 120;
-  }, []);
-
-  const updateCameraAnalysis = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth || !video.videoHeight) return;
-
-    const analysisCanvas = analysisCanvasRef.current;
-    const analysisCtx = analysisCanvas.getContext('2d');
-    analysisCtx.drawImage(video, 0, 0, analysisCanvas.width, analysisCanvas.height);
-
-    const imageData = analysisCtx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
-    let total = 0;
-    const pixels = imageData.data;
-    for (let i = 0; i < pixels.length; i += 4) {
-      total += 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
-    }
-
-    const averageBrightness = total / (pixels.length / 4);
-    const coverTarget = Math.max(0, (45 - averageBrightness) / 45);
-    const coverScore = Math.min(1, appStateRef.current.cameraCoverScore * 0.85 + coverTarget * 0.15);
-    const isCameraCovered = coverScore > 0.25;
-
-    // 타격 감지 (밝기 변화)
-    let isHit = false;
-    if (prevBrightnessRef.current !== null) {
-      const diff = Math.abs(averageBrightness - prevBrightnessRef.current);
-      isHit = diff > 55;
-      if (isHit) {
-        appStateRef.current.isHit = true;
-        // 화면 플래시 효과
-        const container = document.querySelector('.app-container');
-        if (container) {
-          container.style.backgroundColor = 'rgba(100, 0, 0, 0.3)';
-          setTimeout(() => {
-            container.style.backgroundColor = '';
-          }, 50);
-        }
+    try {
+      const savedNickname = window.localStorage.getItem(NICKNAME_STORAGE_KEY);
+      if (savedNickname) {
+        updateState({ nickname: savedNickname });
       }
+    } catch (err) {
+      console.warn('닉네임 저장소 접근 실패:', err);
     }
-    if (isFirstFrameRef.current) {
-      isFirstFrameRef.current = false;
-    }
-    prevBrightnessRef.current = averageBrightness;
-
-    appStateRef.current.cameraBrightness = averageBrightness;
-    appStateRef.current.cameraCoverScore = coverScore;
-    appStateRef.current.isCameraCovered = isCameraCovered;
-
-    updateState({
-      cameraCoverWidth: Math.round(coverScore * 100),
-      cameraStatus: isCameraCovered
-        ? `🌑 카메라 가림 (${Math.round(averageBrightness)} 밝기)`
-        : appStateRef.current.isShoulderShaking
-          ? `💪 어깨 흔들기 (${Math.round(appStateRef.current.shoulderShakeScore * 100)}%)`
-          : isHit
-            ? `✊ 타격 감지! (${Math.round(averageBrightness)} 밝기)`
-            : `📹 밝기 ${Math.round(averageBrightness)} / 관찰 중...`,
-      cameraStatusBg: isCameraCovered ? 'rgba(255, 128, 0, 0.9)' : appStateRef.current.isShoulderShaking ? 'rgba(0, 128, 255, 0.85)' : isHit ? 'rgba(200, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.7)'
-    });
   }, [updateState]);
 
   const updatePrayerState = useCallback((isPraying) => {
@@ -166,17 +138,12 @@ export default function App() {
     appStateRef.current.shoulderShakeScore = shakeScore;
     appStateRef.current.isShoulderShaking = isShaking;
     updateState({
-      shakeWidth: Math.round(shakeScore * 100)
+      shakeWidth: Math.round(shakeScore * 100),
+      motionStatus: isShaking
+        ? `손 흔들기 감지 (${Math.round(shakeScore * 100)}%)`
+        : '손 모션 관찰 중...',
+      motionStatusBg: isShaking ? 'rgba(0, 128, 255, 0.85)' : 'rgba(0, 0, 0, 0.7)'
     });
-
-    if (!appStateRef.current.isCameraCovered) {
-      updateState({
-        cameraStatus: isShaking
-          ? `어깨 흔들기 감지 (${Math.round(shakeScore * 100)}%)`
-          : `밝기 ${Math.round(appStateRef.current.cameraBrightness)} / 관찰 중...`,
-        cameraStatusBg: isShaking ? 'rgba(0, 128, 255, 0.85)' : 'rgba(0, 0, 0, 0.7)'
-      });
-    }
   }, [updateState]);
 
   const closePopup = useCallback(() => {
@@ -227,48 +194,62 @@ export default function App() {
   const calculateGauge = useCallback(() => {
     const volume = appStateRef.current.currentVolume;
     const isPraying = appStateRef.current.isPraying;
-    const isHit = appStateRef.current.isHit;
-    const cameraCoverScore = appStateRef.current.cameraCoverScore;
     const shoulderShakeScore = appStateRef.current.shoulderShakeScore;
-    const isCameraCovered = appStateRef.current.isCameraCovered;
     const isShoulderShaking = appStateRef.current.isShoulderShaking;
 
     // 게이지 계산 로직
     let gauge = 0;
 
-    // 1. 마이크 볼륨: 0-40 포인트
-    gauge += (volume / 100) * 40;
+    // 1. 마이크 볼륨: 0-60 포인트
+    gauge += Math.min(1, volume / 70) * 60;
 
-    // 2. 기도 감지: +25 포인트
+    // 2. 기도 감지: +30 포인트
     if (isPraying) {
-      gauge += 25;
+      gauge += 30;
     }
 
-    // 3. 타격 감지: +15 포인트
-    if (isHit) {
-      gauge += 15;
-    }
-
-    // 4. 카메라 가림: 0-20 포인트
-    if (isCameraCovered) {
-      gauge += cameraCoverScore * 20;
-    }
-
-    // 5. 어깨 흔들기: 0-15 포인트 (isShoulderShaking 일 때만)
+    // 3. 손 흔들기: 0-30 포인트 (isShoulderShaking 일 때만)
     if (isShoulderShaking) {
-      gauge += shoulderShakeScore * 15;
+      gauge += shoulderShakeScore * 30;
     }
 
-    // 6. 팝업 상태에서 사과할 때: +10 포인트 (사과 완료 시)
+    // 4. 팝업 상태에서 사과할 때: +15 포인트 (사과 완료 시)
     if (appStateRef.current.isPopupOpen && appStateRef.current.apologized) {
-      gauge += 10;
+      gauge += 15;
       appStateRef.current.apologized = false;
     }
 
     return Math.min(100, Math.round(gauge));
   }, []);
 
+  const fetchRankings = useCallback(async () => {
+    updateState({ rankingLoading: true, rankingError: '' });
+
+    try {
+      const response = await fetch(`${APP_CONFIG.BACKEND_URL}/ranking/list`);
+      if (!response.ok) {
+        throw new Error('랭킹 서버 응답 오류');
+      }
+
+      const data = await response.json();
+      const rankings = extractRankings(data)
+        .map(normalizeRanking)
+        .sort((a, b) => a.time - b.time)
+        .slice(0, 10);
+
+      updateState({ rankings, rankingLoading: false });
+    } catch (err) {
+      console.error('랭킹 로딩 실패:', err);
+      updateState({
+        rankingLoading: false,
+        rankingError: '랭킹을 불러오지 못했습니다.'
+      });
+    }
+  }, [updateState]);
+
   const sendStatus = useCallback(async () => {
+    if (appStateRef.current.hasAwoken) return;
+
     try {
       // 프론트에서 게이지 계산
       const frontCalculatedGauge = calculateGauge();
@@ -279,14 +260,9 @@ export default function App() {
         volume: appStateRef.current.currentVolume,
         is_praying: appStateRef.current.isPraying,
         is_popup_active: appStateRef.current.isPopupOpen,
-        is_hit: appStateRef.current.isHit,
-        camera_brightness: Math.round(appStateRef.current.cameraBrightness),
-        camera_cover_score: Math.round(appStateRef.current.cameraCoverScore * 100),
-        is_camera_covered: appStateRef.current.isCameraCovered,
         shoulder_shake_score: Math.round(appStateRef.current.shoulderShakeScore * 100),
         is_shoulder_shaking: appStateRef.current.isShoulderShaking
       };
-      appStateRef.current.isHit = false;
 
       const response = await fetch(`${APP_CONFIG.BACKEND_URL}/wakeup`, {
         method: 'POST',
@@ -314,6 +290,7 @@ export default function App() {
       let borderColor = '#0f0';
       let headingText = '[ SYSTEM: AI SLEEPING ]';
       let headingColor = '#0f0';
+      let successPatch = {};
 
       if (data.prayer_required) {
         boxShadow = '0 0 30px #ff0, inset 0 0 20px #ff0';
@@ -325,13 +302,17 @@ export default function App() {
       }
 
       // 프론트에서 계산한 게이지로 성공 판단
-      if (gaugeValue >= 100) {
-        updateState({
+      if (gaugeValue >= 100 && !appStateRef.current.hasAwoken) {
+        appStateRef.current.hasAwoken = true;
+        const finalElapsedTime = Number(((Date.now() - startTimeRef.current) / 1000).toFixed(2));
+        headingText = '[ SYSTEM: AI AWAKE ]';
+        headingColor = '#ffd700';
+        successPatch = {
           isAwoken: true,
           successLayerVisible: true,
-          headingText: '[ SYSTEM: AI AWAKE ]',
-          headingColor: '#ffd700'
-        });
+          elapsedTime: finalElapsedTime
+        };
+        fetchRankings();
         
         // Confetti 효과
         confetti({
@@ -359,12 +340,13 @@ export default function App() {
         headingText,
         headingColor,
         containerBoxShadow: boxShadow,
-        containerBorderColor: borderColor
+        containerBorderColor: borderColor,
+        ...successPatch
       });
     } catch (err) {
       console.error('서버 통신 에러:', err);
     }
-  }, [updateState, calculateGauge]);
+  }, [updateState, calculateGauge, fetchRankings]);
 
   useEffect(() => {
     recognitionRef.current = initSpeech({ onResult: handleSpeechResult, onRecognitionEnd: handleRecognitionEnd });
@@ -393,7 +375,6 @@ export default function App() {
 
         camera = new Camera(videoRef.current, {
           onFrame: async () => {
-            updateCameraAnalysis();
             await hands.send({ image: videoRef.current });
           },
           width: 640,
@@ -444,7 +425,7 @@ export default function App() {
         } catch (e) {}
       }
     };
-  }, [sendStatus, updateCameraAnalysis, updatePrayerState, updateMotionState, updateState]);
+  }, [sendStatus, updatePrayerState, updateMotionState, updateState]);
 
   const handleReset = async () => {
     if (!window.confirm('정말 처음부터 다시 시작하시겠습니까?')) return;
@@ -454,10 +435,78 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: 'test_user_1' })
       });
-      updateState({ aiGauge: 0, aiMessage: '> 시스템이 초기화되었습니다.' });
+      startTimeRef.current = Date.now();
+      appStateRef.current.hasAwoken = false;
+      appStateRef.current.apologized = false;
+      appStateRef.current.isPopupOpen = false;
+      popupVisibleRef.current = false;
+      updateState({
+        aiGauge: 0,
+        aiMessage: '> 시스템이 초기화되었습니다.',
+        aiColor: '#0f0',
+        headingText: '[ SYSTEM: AI SLEEPING ]',
+        headingColor: '#0f0',
+        containerBoxShadow: '0 0 20px rgba(0, 255, 0, 0.2), inset 0 0 10px rgba(0, 255, 0, 0.1)',
+        containerBorderColor: '#0f0',
+        containerFilter: 'none',
+        popupVisible: false,
+        isAwoken: false,
+        successLayerVisible: false,
+        elapsedTime: 0,
+        rankings: [],
+        rankingLoading: false,
+        rankingError: '',
+        rankingSubmitting: false,
+        rankingSubmitted: false,
+        rankingSubmitMessage: ''
+      });
       alert('게이지가 초기화되었습니다.');
     } catch (err) {
       console.error('리셋 실패:', err);
+    }
+  };
+
+  const handleRankingSubmit = async (event) => {
+    event.preventDefault();
+    const name = state.nickname.trim();
+
+    if (!name) {
+      updateState({ rankingSubmitMessage: '닉네임을 입력해주세요.' });
+      return;
+    }
+
+    const time = Number(formatRecordTime(state.elapsedTime));
+    updateState({ rankingSubmitting: true, rankingSubmitMessage: '' });
+
+    try {
+      const response = await fetch(`${APP_CONFIG.BACKEND_URL}/ranking/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, time })
+      });
+
+      if (!response.ok) {
+        throw new Error('랭킹 등록 서버 응답 오류');
+      }
+
+      try {
+        window.localStorage.setItem(NICKNAME_STORAGE_KEY, name);
+      } catch (err) {
+        console.warn('닉네임 저장 실패:', err);
+      }
+
+      updateState({
+        rankingSubmitting: false,
+        rankingSubmitted: true,
+        rankingSubmitMessage: '랭킹에 등록되었습니다.'
+      });
+      fetchRankings();
+    } catch (err) {
+      console.error('랭킹 등록 실패:', err);
+      updateState({
+        rankingSubmitting: false,
+        rankingSubmitMessage: '랭킹 등록에 실패했습니다. 잠시 후 다시 시도해주세요.'
+      });
     }
   };
 
@@ -468,7 +517,7 @@ export default function App() {
       <div className="video-wrapper">
         <video ref={videoRef} autoPlay playsInline muted />
         <canvas ref={canvasRef} width="640" height="480" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none', transform: 'rotateY(180deg)' }} />
-        <div className="overlay-text" style={{ background: state.cameraStatusBg }}>{state.cameraStatus}</div>
+        <div className="overlay-text" style={{ background: state.motionStatusBg }}>{state.motionStatus}</div>
         <div className="overlay-text" style={{ top: 'auto', bottom: '15px', right: '15px', left: 'auto', background: 'rgba(0,0,0,0.8)', borderColor: '#444' }}>
           {state.prayerStatus.text}
         </div>
@@ -490,14 +539,7 @@ export default function App() {
         </div>
 
         <div>
-          <p style={{ marginBottom: '5px', color: '#ff9' }}>카메라 가림 감지</p>
-          <div className="bar-container">
-            <div id="camera-cover-bar" className="bar-fill" style={{ width: `${state.cameraCoverWidth}%` }} />
-          </div>
-        </div>
-
-        <div>
-          <p style={{ marginBottom: '5px', color: '#9ff' }}>어깨 흔들기 감지</p>
+          <p style={{ marginBottom: '5px', color: '#9ff' }}>손 흔들기 감지</p>
           <div className="bar-container">
             <div id="shake-bar" className="bar-fill" style={{ width: `${state.shakeWidth}%` }} />
           </div>
@@ -528,8 +570,60 @@ export default function App() {
             <h1 className="blink-title">👑 GRAND SUCCESS</h1>
             <p className="success-subtitle">상전 AI가 드디어 기상하셨습니다!</p>
             <div className="success-content">
-              <p className="success-time">⏱️ 소요 시간: {state.elapsedTime}초</p>
+              <p className="success-time">⏱️ 소요 시간: {formatRecordTime(state.elapsedTime)}초</p>
               <p className="success-message">귀하는 상전 AI의 변덕을 훌륭히 견뎌냈습니다.</p>
+
+              <form className="ranking-form" onSubmit={handleRankingSubmit}>
+                <label htmlFor="nickname">닉네임</label>
+                <div className="ranking-input-row">
+                  <input
+                    id="nickname"
+                    type="text"
+                    value={state.nickname}
+                    maxLength="16"
+                    placeholder="닉네임 입력"
+                    disabled={state.rankingSubmitting || state.rankingSubmitted}
+                    onChange={(event) => updateState({ nickname: event.target.value, rankingSubmitMessage: '' })}
+                  />
+                  <button
+                    type="submit"
+                    className="ranking-submit-button"
+                    disabled={state.rankingSubmitting || state.rankingSubmitted}
+                  >
+                    {state.rankingSubmitting ? '등록 중...' : state.rankingSubmitted ? '등록 완료' : '랭킹 등록'}
+                  </button>
+                </div>
+                {state.rankingSubmitMessage && (
+                  <p className={state.rankingSubmitted ? 'ranking-submit-message success' : 'ranking-submit-message'}>
+                    {state.rankingSubmitMessage}
+                  </p>
+                )}
+              </form>
+
+              <div className="ranking-panel">
+                <div className="ranking-header">
+                  <h2>TOP 10 RANKING</h2>
+                  <button type="button" onClick={fetchRankings} disabled={state.rankingLoading}>
+                    {state.rankingLoading ? '로딩 중' : '새로고침'}
+                  </button>
+                </div>
+                {state.rankingError && <p className="ranking-error">{state.rankingError}</p>}
+                {!state.rankingError && state.rankings.length === 0 && (
+                  <p className="ranking-empty">{state.rankingLoading ? '랭킹 로딩 중...' : '아직 등록된 기록이 없습니다.'}</p>
+                )}
+                {state.rankings.length > 0 && (
+                  <ol className="ranking-list">
+                    {state.rankings.map((ranking, index) => (
+                      <li key={ranking.id} className="ranking-row">
+                        <span className="ranking-position">{index + 1}</span>
+                        <span className="ranking-name">{ranking.name}</span>
+                        <span className="ranking-time">{formatRecordTime(ranking.time)}초</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+
               <button 
                 className="success-button"
                 onClick={() => window.location.reload()}
