@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>상전 AI 모시기 (The Noble AI)</title>
+    <!-- 외부 스타일시트 연결 -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- MediaPipe 라이브러리 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="container">
+        <h1>[ SYSTEM: AI SLEEPING ]</h1>
+        
+        <div class="video-wrapper">
+            <video id="webcam" autoplay playsinline></video>
+            <canvas id="output_canvas" width="640" height="480" style="position: absolute; top:0; left:0; width:100%; height:100%; z-index: 10; pointer-events: none; transform: rotateY(180deg);"></canvas>
+            <div id="prayer-status" style="position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.8); color: #888; padding: 8px 15px; border-radius: 5px; border: 1px solid #444; z-index: 20; font-weight: bold; transition: 0.3s;">
+                ⏳ 모델 로딩중...
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div>
+                <p style="margin-bottom: 5px;">마이크 볼륨 (간절한 외침 감지기)</p>
+                <div class="bar-container">
+                    <div id="volume-bar"></div>
+                </div>
+            </div>
+
+            <div>
+                <p style="margin-bottom: 5px; color: #ff0;">AI 잠깨움 게이지</p>
+                <div class="bar-container">
+                    <div id="ai-gauge"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-box">
+            <p id="ai-message">"AI가 깊은 잠에 빠져있습니다..."</p>
+        </div>
+
+        <button id="reset-btn" style="margin-top: 20px; background: none; border: 1px solid #555; color: #555; padding: 5px 10px; cursor: pointer; font-size: 0.8rem; border-radius: 3px; transition: 0.3s;">
+            시스템 재시작 (Reset)
+        </button>
+    </div>
+
+    <div id="popup">
+        <h2>⚠️ SYSTEM WARNING ⚠️</h2>
+        <p>이웃 주민으로부터 소음 신고가 접수되었습니다!<br>경찰을 부르기 전에 육성으로 싹싹 비세요.</p>
+        <p id="stt-status" style="color: yellow; font-weight: bold; font-size: 1.2rem; margin-top: 20px; white-space: pre-wrap; line-height: 1.5;">🎤 "죄송합니다"라고 사과하세요...</p>
+    </div>
+
+    <!-- 기능별로 분리된 ES6 모듈 로드 -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
